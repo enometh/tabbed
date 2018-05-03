@@ -131,6 +131,7 @@ static int textnw(const char *text, unsigned int len);
 static void toggle(const Arg *arg);
 static void unmanage(int c);
 static void unmapnotify(const XEvent *e);
+static void updateiconhints(int c, XWMHints* cwmh);
 static void updatenumlockmask(void);
 static void updatetitle(int c);
 static int xerror(Display *dpy, XErrorEvent *ee);
@@ -475,6 +476,8 @@ focus(int c)
 		lastsel = sel;
 		sel = c;
 	}
+
+	updateiconhints(c, NULL);
 
 	if (clients[c]->urgent && (wmh = XGetWMHints(dpy, clients[c]->win))) {
 		wmh->flags &= ~XUrgencyHint;
@@ -854,6 +857,10 @@ propertynotify(const XEvent *e)
 	} else if (ev->state == PropertyNewValue && ev->atom == XA_WM_HINTS &&
 	           (c = getclient(ev->window)) > -1 &&
 	           (wmh = XGetWMHints(dpy, clients[c]->win))) {
+
+		if (c == sel && wmh->flags & (IconPixmapHint | IconMaskHint))
+			updateiconhints(c, wmh);
+
 		if (wmh->flags & XUrgencyHint) {
 			XFree(wmh);
 			wmh = XGetWMHints(dpy, win);
@@ -1208,6 +1215,27 @@ unmapnotify(const XEvent *e)
 
 	if ((c = getclient(ev->window)) > -1)
 		unmanage(c);
+}
+
+void
+updateiconhints(int c, XWMHints *wmh)
+{
+	int alloc = 0;
+	if (!wmh) {
+		wmh = XGetWMHints(dpy, clients[c]->win);
+		alloc = 1;
+	}
+	if (wmh) {
+		XWMHints *new = XAllocWMHints();
+		if (new) {
+			new->flags = IconPixmapHint | IconMaskHint;
+			new->icon_pixmap = wmh->icon_pixmap;
+			new->icon_mask = wmh->icon_mask;
+			XSetWMHints(dpy, win, new);
+			XFree(new);
+		}
+		if (alloc) XFree(wmh);
+	}
 }
 
 void
