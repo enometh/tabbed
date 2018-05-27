@@ -173,6 +173,11 @@ static const char *geometry;
 
 char *argv0;
 
+int _32bpp = 0;
+Visual * xv_visual = NULL;
+int xv_depth = 0;
+Colormap xv_cmap;
+
 /* configuration, allows nested code to access above variables */
 #include "config.h"
 
@@ -256,16 +261,7 @@ configurenotify(const XEvent *e)
 		wh = ev->height;
 		XFreePixmap(dpy, dc.drawable);
 		dc.drawable = XCreatePixmap(dpy, root, ww, wh,
-		              DefaultDepth(dpy, screen));
-
-		if (!obh && (wh <= bh)) {
-			obh = bh;
-			bh = 0;
-		} else if (!bh && (wh > obh)) {
-			bh = obh;
-			obh = 0;
-		}
-
+					    xv_depth);
 		if (sel > -1)
 			resize(sel, ww, wh - bh);
 		XSync(dpy, False);
@@ -408,7 +404,7 @@ drawtext(const char *text, XftColor col[ColLast])
 			;
 	}
 
-	d = XftDrawCreate(dpy, dc.drawable, DefaultVisual(dpy, screen), DefaultColormap(dpy, screen));
+	d = XftDrawCreate(dpy, dc.drawable, xv_visual, xv_cmap);
 	XftDrawStringUtf8(d, &col[ColFG], dc.font.xfont, x, y, (XftChar8 *) buf, len);
 	XftDrawDestroy(d);
 }
@@ -578,7 +574,7 @@ getcolor(const char *colstr)
 {
 	XftColor color;
 
-	if (!XftColorAllocName(dpy, DefaultVisual(dpy, screen), DefaultColormap(dpy, screen), colstr, &color))
+	if (!XftColorAllocName(dpy, xv_visual, xv_cmap, colstr, &color))
 		die("%s: cannot allocate color '%s'\n", argv0, colstr);
 
 	return color;
@@ -1037,23 +1033,79 @@ setup(void)
 			wy = dh + wy - wh - 1;
 	}
 
+	if (_32bpp) {
+		XVisualInfo *vis;
+		XRenderPictFormat *fmt;
+		int nvi;
+		int i;
+
+		XVisualInfo tpl = {
+			.screen = screen,
+			.depth = 32,
+			.class = TrueColor
+		};
+
+		vis = XGetVisualInfo(dpy,
+				     VisualScreenMask | VisualDepthMask | VisualClassMask,
+				     &tpl, &nvi);
+		xv_visual = NULL;
+		for (i = 0; i < nvi; i++) {
+			fmt = XRenderFindVisualFormat(dpy, vis[i].visual);
+			if (fmt->type == PictTypeDirect && fmt->direct.alphaMask) {
+				xv_visual = vis[i].visual;
+				xv_depth = vis[i].depth;
+				xv_cmap = XCreateColormap(dpy, root, xv_visual, AllocNone);
+				break;
+			}
+		}
+		XFree(vis);
+		if (!xv_visual) {
+			fprintf(stderr, "Couldn't find ARGB visual.\n");
+			xv_cmap = DefaultColormap(dpy, screen);
+			xv_depth = DefaultDepth(dpy,screen);
+			xv_visual = DefaultVisual(dpy,screen);
+		}
+	} else {
+			xv_cmap = DefaultColormap(dpy, screen);
+			xv_depth = DefaultDepth(dpy,screen);
+			xv_visual = DefaultVisual(dpy,screen);
+	}
+
 	dc.norm[ColBG] = getcolor(normbgcolor);
 	dc.norm[ColFG] = getcolor(normfgcolor);
 	dc.sel[ColBG] = getcolor(selbgcolor);
 	dc.sel[ColFG] = getcolor(selfgcolor);
 	dc.urg[ColBG] = getcolor(urgbgcolor);
 	dc.urg[ColFG] = getcolor(urgfgcolor);
-	dc.drawable = XCreatePixmap(dpy, root, ww, wh,
-	                            DefaultDepth(dpy, screen));
-	dc.gc = XCreateGC(dpy, root, 0, 0);
+	dc.drawable = XCreatePixmap(dpy, root, ww, wh, xv_depth);
 
-	win = XCreateSimpleWindow(dpy, root, wx, wy, ww, wh, 0,
-	                          dc.norm[ColFG].pixel, dc.norm[ColBG].pixel);
+	if (!xv_visual)
+		win = XCreateSimpleWindow(dpy, root, wx, wy, ww, wh, 0,
+					  dc.norm[ColFG].pixel,
+					  dc.norm[ColBG].pixel);
+	else {
+		XSetWindowAttributes swa;
+		swa.background_pixel = dc.norm[ColBG].pixel;
+		swa.border_pixel = dc.norm[ColFG].pixel;
+		swa.colormap = xv_cmap;
+		swa.event_mask = SubstructureNotifyMask | FocusChangeMask |
+			ButtonPressMask | ExposureMask | KeyPressMask |
+			PropertyChangeMask | StructureNotifyMask |
+			SubstructureRedirectMask;
+		win = XCreateWindow(dpy, root, wx, wy, ww, wh, 0,
+				    xv_depth, InputOutput, xv_visual,
+				    CWBorderPixel | CWColormap | CWEventMask |
+				    CWBackPixel, &swa);
+	}
+
+	dc.gc = XCreateGC(dpy, win, 0, 0);
+
 	XMapRaised(dpy, win);
 	XSelectInput(dpy, win, SubstructureNotifyMask | FocusChangeMask |
 	             ButtonPressMask | ExposureMask | KeyPressMask |
 	             PropertyChangeMask | StructureNotifyMask |
 	             SubstructureRedirectMask);
+
 	xerrorxlib = XSetErrorHandler(xerror);
 
 	class_hint.res_name = wmname;
@@ -1298,6 +1350,7 @@ usage(void)
 {
 	die("usage: %s [-dfksv] [-g geometry] [-n name] [-p [s+/-]pos]\n"
 	    "       [-r narg] [-o color] [-O color] [-t color] [-T color]\n"
+	    "       [-32bpp]\n"
 	    "       [-u color] [-U color] command...\n", argv0);
 }
 
@@ -1364,6 +1417,11 @@ main(int argc, char *argv[])
 	case 'v':
 		die("tabbed-"VERSION", © 2009-2016 tabbed engineers, "
 		    "see LICENSE for details.\n");
+		break;
+	case '3':
+		if (strcmp("2bpp", EARGF(usage())) != 0)
+			usage();
+		_32bpp = 1;
 		break;
 	default:
 		usage();
