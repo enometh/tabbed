@@ -454,7 +454,7 @@ focus(int c)
 			n += snprintf(&buf[n], sizeof(buf) - n, " %s", cmd[i]);
 
 		xsettitle(win, buf);
-		XRaiseWindow(dpy, win);
+		//XRaiseWindow(dpy, win);
 
 		return;
 	}
