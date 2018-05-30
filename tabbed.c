@@ -49,6 +49,7 @@
 
 enum { ColFG, ColBG, ColLast };       /* color */
 enum { WMProtocols, WMDelete, WMName, WMState, WMFullscreen,
+       WMIcon, WMIconGeometry, WMIconName,
        XEmbed, WMSelectTab, WMLast }; /* default atoms */
 
 typedef union {
@@ -997,6 +998,9 @@ setup(void)
 	wmatom[WMProtocols] = XInternAtom(dpy, "WM_PROTOCOLS", False);
 	wmatom[WMSelectTab] = XInternAtom(dpy, "_TABBED_SELECT_TAB", False);
 	wmatom[WMState] = XInternAtom(dpy, "_NET_WM_STATE", False);
+	wmatom[WMIcon] = XInternAtom(dpy, "_NET_WM_ICON", False);
+	wmatom[WMIconGeometry] = XInternAtom(dpy, "_NET_WM_ICON_GEOMETRY", False);
+	wmatom[WMIconName] = XInternAtom(dpy, "_NET_WM_ICON_NAME", False);
 	wmatom[XEmbed] = XInternAtom(dpy, "_XEMBED", False);
 
 	/* init appearance */
@@ -1270,6 +1274,10 @@ updateiconhints(int c, XWMHints *wmh)
 		}
 		if (alloc) XFree(wmh);
 	}
+
+	XDeleteProperty(dpy, win, wmatom[WMIcon]);
+	XDeleteProperty(dpy, win, wmatom[WMIconGeometry]);
+	XDeleteProperty(dpy, win, wmatom[WMIconName]);
 }
 
 void
