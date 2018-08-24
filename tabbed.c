@@ -695,6 +695,11 @@ killclient(const Arg *arg)
 	}
 }
 
+extern int client_msg(Display *disp, Window win, char *msg,
+	       unsigned long data0, unsigned long data1,
+	       unsigned long data2, unsigned long data3,
+	       unsigned long data4);
+
 void
 manage(Window w)
 {
@@ -763,6 +768,10 @@ manage(Window w)
 		e.xclient.data.l[4] = 0;
 		XSendEvent(dpy, root, False, NoEventMask, &e);
 
+		if (client_msg(dpy, win, "_NET_ACTIVE_WINDOW", 0, 0, 0, 0, 0)
+		    != 0)
+			fprintf(stderr, "Did not activate window\n");
+
 		XSync(dpy, False);
 
 		/* Adjust sel before focus does set it to lastsel. */
@@ -782,6 +791,13 @@ maprequest(const XEvent *e)
 
 	if (getclient(ev->window) < 0)
 		manage(ev->window);
+		FILE *out;
+		if ((out = fopen("/dev/xconsole", "w")) != NULL) {
+		  fprintf(out, "raising %lx\n", win);
+		  fclose(out);
+		} else
+		  exit(1);
+		XRaiseWindow(dpy, win);
 }
 
 void
@@ -1467,4 +1483,35 @@ main(int argc, char *argv[])
 	XCloseDisplay(dpy);
 
 	return EXIT_SUCCESS;
+}
+
+
+int
+client_msg(Display *disp, Window win, char *msg, /* {{{ */
+	       unsigned long data0, unsigned long data1,
+	       unsigned long data2, unsigned long data3,
+	       unsigned long data4)
+{
+	XEvent event;
+	long mask = SubstructureRedirectMask | SubstructureNotifyMask;
+
+	event.xclient.type = ClientMessage;
+	event.xclient.serial = 0;
+	event.xclient.send_event = True;
+	event.xclient.message_type = XInternAtom(disp, msg, False);
+	event.xclient.window = win;
+	event.xclient.format = 32;
+	event.xclient.data.l[0] = data0;
+	event.xclient.data.l[1] = data1;
+	event.xclient.data.l[2] = data2;
+	event.xclient.data.l[3] = data3;
+	event.xclient.data.l[4] = data4;
+
+	if (XSendEvent(disp, DefaultRootWindow(disp), False, mask, &event)) {
+		return EXIT_SUCCESS;
+	}
+	else {
+		fprintf(stderr, "Cannot send %s event.\n", msg);
+		return EXIT_FAILURE;
+	}
 }
