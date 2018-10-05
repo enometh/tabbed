@@ -462,8 +462,10 @@ focus(int c)
 		return;
 
 	resize(c, ww, wh - bh);
+	if (autoraise) {
 	XRaiseWindow(dpy, clients[c]->win);
 	XSetInputFocus(dpy, clients[c]->win, RevertToParent, CurrentTime);
+	}
 	sendxembed(c, XEMBED_FOCUS_IN, XEMBED_FOCUS_CURRENT, 0, 0);
 	sendxembed(c, XEMBED_WINDOW_ACTIVATE, 0, 0, 0);
 	xsettitle(win, clients[c]->name);
@@ -768,9 +770,10 @@ manage(Window w)
 		e.xclient.data.l[4] = 0;
 		XSendEvent(dpy, root, False, NoEventMask, &e);
 
-		if (client_msg(dpy, win, "_NET_ACTIVE_WINDOW", 0, 0, 0, 0, 0)
-		    != 0)
-			fprintf(stderr, "Did not activate window\n");
+		if (autoraise)
+		  if (client_msg(dpy, win, "_NET_ACTIVE_WINDOW", 0, 0, 0, 0, 0)
+		      != 0)
+			  fprintf(stderr, "Did not activate window\n");
 
 		XSync(dpy, False);
 
@@ -862,6 +865,8 @@ propertynotify(const XEvent *e)
 		if (c == sel && wmh->flags & (IconPixmapHint | IconMaskHint))
 			updateiconhints(c, wmh);
 
+
+		if (autoraise)
 		if (wmh->flags & XUrgencyHint) {
 			XFree(wmh);
 			wmh = XGetWMHints(dpy, win);
