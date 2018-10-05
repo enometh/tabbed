@@ -768,9 +768,10 @@ manage(Window w)
 		e.xclient.data.l[4] = 0;
 		XSendEvent(dpy, root, False, NoEventMask, &e);
 
-		if (client_msg(dpy, win, "_NET_ACTIVE_WINDOW", 0, 0, 0, 0, 0)
-		    != 0)
-			fprintf(stderr, "Did not activate window\n");
+		if (autoraise)
+		  if (client_msg(dpy, win, "_NET_ACTIVE_WINDOW", 0, 0, 0, 0, 0)
+		      != 0)
+			  fprintf(stderr, "Did not activate window\n");
 
 		XSync(dpy, False);
 
