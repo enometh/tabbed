@@ -1050,6 +1050,9 @@ setup(void)
 	wh = 600;
 	isfixed = 0;
 
+
+	// ;madhu 181215 if geometry is specified, tabbed window
+	// ;cannot be resized
 	if (geometry) {
 		tx = ty = tw = th = 0;
 		bitm = XParseGeometry(geometry, &tx, &ty, (unsigned *)&tw,
