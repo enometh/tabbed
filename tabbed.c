@@ -17,6 +17,12 @@
 #include <X11/XKBlib.h>
 #include <X11/Xft/Xft.h>
 
+#include <gtk/gtk.h>
+#include <gdk/gdkx.h>
+#include <gdk-pixbuf/gdk-pixdata.h>
+#include <gdk-pixbuf-xlib/gdk-pixbuf-xlib.h>
+#include <assert.h>
+
 #include "arg.h"
 
 /* XEMBED messages */
@@ -41,8 +47,10 @@
 #define XEMBED_FOCUS_LAST               2
 
 /* Macros */
+#ifndef MAX
 #define MAX(a, b)               ((a) > (b) ? (a) : (b))
 #define MIN(a, b)               ((a) < (b) ? (a) : (b))
+#endif
 #define LENGTH(x)               (sizeof((x)) / sizeof(*(x)))
 #define CLEANMASK(mask)         (mask & ~(numlockmask | LockMask))
 #define TEXTW(x)                (textnw(x, strlen(x)) + dc.font.height)
@@ -111,6 +119,7 @@ static int getclient(Window w);
 static XftColor getcolor(const char *colstr);
 static int getfirsttab(void);
 static Bool gettextprop(Window w, Atom atom, char *text, unsigned int size);
+void *get_xaproperty (Window win, Atom prop, Atom type, int *nitems);
 static void initfont(const char *fontstr);
 static Bool isprotodel(int c);
 static void keypress(const XEvent *e);
@@ -790,8 +799,9 @@ maprequest(const XEvent *e)
 {
 	const XMapRequestEvent *ev = &e->xmaprequest;
 
-	if (getclient(ev->window) < 0)
+	if (getclient(ev->window) < 0) {
 		manage(ev->window);
+	}
 		FILE *out;
 		if ((out = fopen("/dev/xconsole", "w")) != NULL) {
 		  fprintf(out, "raising %lx\n", win);
@@ -860,8 +870,7 @@ propertynotify(const XEvent *e)
 	           (c = getclient(ev->window)) > -1 &&
 	           (wmh = XGetWMHints(dpy, clients[c]->win))) {
 
-		if (c == sel && wmh->flags & (IconPixmapHint | IconMaskHint))
-			updateiconhints(c, wmh);
+		if (c == sel) updateiconhints(c, wmh);
 
 		if (wmh->flags & XUrgencyHint) {
 			XFree(wmh);
@@ -1103,11 +1112,14 @@ setup(void)
 	dc.urg[ColFG] = getcolor(urgfgcolor);
 	dc.drawable = XCreatePixmap(dpy, root, ww, wh, xv_depth);
 
-	if (!xv_visual)
+	gdk_init(0,0);
+	gdk_pixbuf_xlib_init_with_depth(dpy,screen, xv_depth);
+
+	if (!xv_visual) {
 		win = XCreateSimpleWindow(dpy, root, wx, wy, ww, wh, 0,
 					  dc.norm[ColFG].pixel,
 					  dc.norm[ColBG].pixel);
-	else {
+	} else {
 		XSetWindowAttributes swa;
 		swa.background_pixel = dc.norm[ColBG].pixel;
 		swa.border_pixel = dc.norm[ColFG].pixel;
@@ -1275,27 +1287,266 @@ unmapnotify(const XEvent *e)
 		unmanage(c);
 }
 
+
+static GdkPixbuf*
+apply_mask (GdkPixbuf *pixbuf,
+            GdkPixbuf *mask)
+{
+	int w, h;
+	int i, j;
+	GdkPixbuf *with_alpha;
+	guchar *src;
+	guchar *dest;
+	int src_stride;
+	int dest_stride;
+
+	w = MIN (gdk_pixbuf_get_width (mask), gdk_pixbuf_get_width (pixbuf));
+	h = MIN (gdk_pixbuf_get_height (mask), gdk_pixbuf_get_height (pixbuf));
+
+	with_alpha = gdk_pixbuf_add_alpha (pixbuf, FALSE, 0, 0, 0);
+
+	dest = gdk_pixbuf_get_pixels (with_alpha);
+	src = gdk_pixbuf_get_pixels (mask);
+
+	dest_stride = gdk_pixbuf_get_rowstride (with_alpha);
+	src_stride = gdk_pixbuf_get_rowstride (mask);
+
+	i = 0;
+	while (i < h)
+	{
+		j = 0;
+		while (j < w)
+		{
+			guchar *s = src + i * src_stride + j * 3;
+			guchar *d = dest + i * dest_stride + j * 4;
+
+			/* s[0] == s[1] == s[2], they are 255 if the bit was set, 0
+			 * otherwise
+			 */
+			if (s[0] == 0)
+				d[3] = 0;   /* transparent */
+			else
+				d[3] = 255; /* opaque */
+
+			++j;
+		}
+
+		++i;
+	}
+
+	return(with_alpha);
+}
+
+
+static GdkPixbuf *
+get_from_pixmap(Pixmap xpixmap, Pixmap xmask)
+{
+	unsigned int w, h;
+	int sd;
+	GdkPixbuf *masked, *pixmap, *mask = NULL;
+	Window win;
+	fprintf(stderr,"get_from_pixmap(%lu %lu)\n", xpixmap, xmask);
+	if (xpixmap == None) return NULL;
+	if (!XGetGeometry (dpy, xpixmap, &win, &sd, &sd, &w, &h,
+              (guint *)&sd, (guint *)&sd)) {
+		fprintf(stderr, "XGetGeometry failed for %x pixmap\n", (unsigned int)xpixmap);
+		return NULL;
+	}
+	pixmap = gdk_pixbuf_xlib_get_from_drawable(NULL,
+						   xpixmap,
+						   xv_cmap,
+						   xv_visual,
+						   0, 0, 0, 0,
+						   w, h);
+	if (!pixmap) return NULL;
+	if (xmask != None && XGetGeometry(dpy, xmask, &win, &sd, &sd, &w, &h,
+					  (guint *)&sd, (guint *)&sd)) {
+		mask = gdk_pixbuf_xlib_get_from_drawable(NULL,
+							 xpixmap,
+							 xv_cmap,
+							 xv_visual,
+							 0, 0, 0, 0,
+							 w, h);
+		if (mask) {
+			masked = apply_mask (pixmap, mask);
+			g_object_unref (G_OBJECT (pixmap));
+			g_object_unref (G_OBJECT (mask));
+			pixmap = masked;
+		}
+	}
+
+	fprintf(stderr,"get_from_pixmap: returning %p\n", pixmap);
+	return pixmap;
+}
+
+static guchar *
+argb2pixdata (gulong *argb_data, int len)
+{
+	guchar *p, *ret;
+	int i;
+
+	ret = p = g_new (guchar, len * 4);
+	if (!ret) return NULL;
+	/* One could speed this up a lot. */
+	i = 0;
+	while (i < len) {
+		guint32 argb;
+		guint32 rgba;
+
+		argb = argb_data[i];
+		rgba = (argb << 8) | (argb >> 24);
+
+		*p = rgba >> 24;
+		++p;
+		*p = (rgba >> 16) & 0xff;
+		++p;
+		*p = (rgba >> 8) & 0xff;
+		++p;
+		*p = rgba & 0xff;
+		++p;
+
+		++i;
+	}
+	return ret;
+}
+
+
+static void
+free_pixels (guchar *pixels, gpointer data)
+{
+    g_free (pixels);
+}
+
+static GdkPixbuf *
+get_net_wm_icon(Window win)
+{
+	int n;
+	GdkPixbuf *ret = NULL;
+	Atom *data = get_xaproperty(win, wmatom[WMIcon], XA_CARDINAL, &n);
+	fprintf(stderr,"get_net_wm_icon: data=%d\n", data);
+	if (!data) return NULL;
+        if (n > 2*sizeof(guint32)) {
+            guchar *p;
+            int w, h;
+            w = data[0];
+            h = data[1];
+            p = argb2pixdata(data + 2, w * h);
+            if (!p) return NULL;
+            ret = gdk_pixbuf_new_from_data (p, GDK_COLORSPACE_RGB, TRUE,
+					    8, w, h, w * 4, free_pixels, NULL);
+	    XFree (data);
+	}
+	return ret;
+}
+
+
+gulong *
+pixbuf2argb (GdkPixbuf *pixbuf, int *size)
+{
+	gulong *data;
+	guchar *pixels;
+	gulong *p;
+	gint width, height, stride;
+	gint x, y;
+	gint n_channels;
+
+	*size = 0;
+	width = gdk_pixbuf_get_width (pixbuf);
+	height = gdk_pixbuf_get_height (pixbuf);
+	stride = gdk_pixbuf_get_rowstride (pixbuf);
+	n_channels = gdk_pixbuf_get_n_channels (pixbuf);
+
+	*size += 2 + width * height;
+	p = data = g_malloc (*size * sizeof (gulong));
+	*p++ = width;
+	*p++ = height;
+
+	pixels = gdk_pixbuf_get_pixels (pixbuf);
+
+	for (y = 0; y < height; y++) {
+		for (x = 0; x < width; x++) {
+			guchar r, g, b, a;
+
+			r = pixels[y*stride + x*n_channels + 0];
+			g = pixels[y*stride + x*n_channels + 1];
+			b = pixels[y*stride + x*n_channels + 2];
+			if (n_channels >= 4)
+				a = pixels[y*stride + x*n_channels + 3];
+			else
+				a = 255;
+
+			*p++ = a << 24 | r << 16 | g << 8 | b ;
+		}
+	}
+	return data;
+}
+
+void
+set_net_wm_icon(GdkPixbuf *pixbuf)
+{
+#if 0
+	/* ;madhu 191016 if gdk/x11/gdkwindow-x11.c:
+	 * _gdk_x11_window_get_toplevel is patched so that it does not
+	 * fail for foreign windows then the following will work
+	 */
+	static GdkWindow *gdkwindow;
+	if (!gdkwindow) {
+		GdkDisplay *gdkdisplay = gdk_display_get_default();
+		gdkwindow = gdk_x11_window_foreign_new_for_display(gdkdisplay, win);
+		assert(gdkwindow);
+	}
+	GList *icon_list = g_list_append(NULL, pixbuf);
+	gdk_window_set_icon_list(gdkwindow, icon_list);
+	g_list_free(icon_list);
+#else
+	int size;
+	gulong *data = NULL;
+	if (pixbuf) {
+		data = pixbuf2argb(pixbuf, &size);
+		if (data && (size > 0))
+			XChangeProperty (dpy, win,
+					 wmatom[WMIcon], XA_CARDINAL, 32,
+					 PropModeReplace,
+					 (guchar*) data, size);
+	}
+#endif
+}
+
+
 void
 updateiconhints(int c, XWMHints *wmh)
 {
+	fprintf(stderr, "updatehints(%lu, %p)\n\n", clients[c]->win, wmh);
 	int alloc = 0;
+	Pixmap xpixmap = None;
+	Pixmap xmask = None;
 	if (!wmh) {
 		wmh = XGetWMHints(dpy, clients[c]->win);
 		alloc = 1;
 	}
-	if (wmh) {
-		XWMHints *new = XAllocWMHints();
-		if (new) {
-			new->flags = IconPixmapHint | IconMaskHint;
-			new->icon_pixmap = wmh->icon_pixmap;
-			new->icon_mask = wmh->icon_mask;
-			XSetWMHints(dpy, win, new);
-			XFree(new);
-		}
-		if (alloc) XFree(wmh);
+	if (wmh && wmh->flags & IconPixmapHint) xpixmap = wmh->icon_pixmap;
+	if (wmh && wmh->flags & IconMaskHint) xmask = wmh->icon_mask;
+	XWMHints *new = XAllocWMHints();
+	if (new) {
+		new->flags = IconPixmapHint | IconMaskHint;
+		new->icon_pixmap = xpixmap;
+		new->icon_mask = xmask;
+		fprintf(stderr, "setting hints %lu %lu\n", xpixmap, xmask);
+		XSetWMHints(dpy, win, new);
+		XFree(new);
+	}
+	if (alloc&&wmh) XFree(wmh);
+	GdkPixbuf *pixbuf;
+	if (((pixbuf = get_net_wm_icon(clients[c]->win)) ||
+	     (pixbuf = get_from_pixmap(xpixmap, xmask)))) {
+		set_net_wm_icon(pixbuf);
+		fprintf(stderr, "updatehints updating\n");
+	} else {
+		fprintf(stderr, "updatehints deleting\n");
+		XDeleteProperty(dpy, win, wmatom[WMIcon]);
 	}
 
-	XDeleteProperty(dpy, win, wmatom[WMIcon]);
+	//XDeleteProperty(dpy, win, wmatom[WMIcon]);
 	XDeleteProperty(dpy, win, wmatom[WMIconGeometry]);
 	XDeleteProperty(dpy, win, wmatom[WMIconName]);
 }
@@ -1381,6 +1632,8 @@ usage(void)
 	    "       [-32bpp]\n"
 	    "       [-u color] [-U color] command...\n", argv0);
 }
+
+
 
 int
 main(int argc, char *argv[])
@@ -1472,6 +1725,11 @@ main(int argc, char *argv[])
 	printf("0x%lx\n", win);
 	fflush(NULL);
 
+	GdkPixbuf *pixbuf = gdk_pixbuf_new_from_file ("/usr/share/pixmaps/wyeb.png", NULL);
+	set_net_wm_icon(pixbuf);
+	g_object_unref(pixbuf);
+
+
 	if (detach) {
 		if (fork() == 0) {
 			fclose(stdout);
@@ -1518,4 +1776,25 @@ client_msg(Display *disp, Window win, char *msg, /* {{{ */
 		fprintf(stderr, "Cannot send %s event.\n", msg);
 		return EXIT_FAILURE;
 	}
+}
+
+
+void *
+get_xaproperty (Window win, Atom prop, Atom type, int *nitems)
+{
+	Atom type_ret;
+	int format_ret;
+	unsigned long items_ret;
+	unsigned long after_ret;
+	unsigned char *prop_data;
+
+	prop_data = NULL;
+	if (XGetWindowProperty (dpy, win, prop, 0, 0x7fffffff, False,
+				type, &type_ret, &format_ret, &items_ret,
+				&after_ret, &prop_data) != Success)
+		return NULL;
+	fprintf(stderr, "get_xaproperty:%u %p %d\n", win, prop_data, items_ret);
+	if (nitems)
+		*nitems = items_ret;
+	return prop_data;
 }

@@ -20,6 +20,9 @@ FREETYPEINC = /usr/include/freetype2
 INCS = -I. -I/usr/include -I$(X11INC) -I${FREETYPEINC}
 LIBS = -L/usr/lib -L${X11LIB} -lX11 ${FREETYPELIBS}
 
+INCS += $(shell pkg-config gtk+-3.0 gtk+-x11-3.0 gdk-pixbuf-xlib-2.0 --cflags)
+LIBS += $(shell pkg-config gtk+-3.0 gtk+-x11-3.0 gdk-pixbuf-xlib-2.0 --libs)
+
 # flags
 CPPFLAGS = -DVERSION=\"${VERSION}\" -D_DEFAULT_SOURCE
 CFLAGS = -std=c99 -pedantic -Wall -ggdb ${INCS} ${CPPFLAGS}
