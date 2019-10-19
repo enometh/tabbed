@@ -147,6 +147,10 @@ static void updatetitle(int c);
 static int xerror(Display *dpy, XErrorEvent *ee);
 static void xsettitle(Window w, const char *str);
 
+typedef enum { icon_type_pixmap = 1, icon_type_net_wm = 2, icon_type_both = 3 }  icon_type;
+
+static void set_default_icon(icon_type which);
+
 /* variables */
 static int screen;
 static void (*handler[LASTEvent]) (const XEvent *) = {
@@ -1275,8 +1279,10 @@ unmanage(int c)
 
 		if (closelastclient)
 			running = False;
-		else if (fillagain && running)
+		else if (fillagain && running) {
 			spawn(NULL);
+			set_default_icon(icon_type_both);
+		}
 	} else {
 		if (lastsel >= nclients)
 			lastsel = nclients - 1;
@@ -1325,6 +1331,18 @@ apply_mask (GdkPixbuf *pixbuf,
 	w = MIN (gdk_pixbuf_get_width (mask), gdk_pixbuf_get_width (pixbuf));
 	h = MIN (gdk_pixbuf_get_height (mask), gdk_pixbuf_get_height (pixbuf));
 
+	int depth_mask = gdk_pixbuf_get_bits_per_sample(mask);
+	int n_channels_mask = gdk_pixbuf_get_n_channels(mask);
+	assert(gdk_pixbuf_get_bits_per_sample(pixbuf) == 8);
+
+	fprintf(stderr, "depth=%d n_channels=%d\n",
+		gdk_pixbuf_get_bits_per_sample(pixbuf),
+		gdk_pixbuf_get_n_channels(pixbuf));
+
+	fprintf(stderr, "depth_mask=%d n_channels_mask=%d\n",
+		depth_mask, n_channels_mask);
+
+	assert (!gdk_pixbuf_get_has_alpha(pixbuf));
 	with_alpha = gdk_pixbuf_add_alpha (pixbuf, FALSE, 0, 0, 0);
 
 	dest = gdk_pixbuf_get_pixels (with_alpha);
@@ -1341,14 +1359,17 @@ apply_mask (GdkPixbuf *pixbuf,
 		{
 			guchar *s = src + i * src_stride + j * 3;
 			guchar *d = dest + i * dest_stride + j * 4;
+//			assert(s[0] == s[1]);
+//			assert(s[1] == s[2]);
+//			assert(s[0] == 0 || s[0] == 255);
 
 			/* s[0] == s[1] == s[2], they are 255 if the bit was set, 0
 			 * otherwise
 			 */
-			if (s[0] == 0)
-				d[3] = 0;   /* transparent */
+			if (s[2] != 0)
+				d[3] = 255;   /* opaque*/
 			else
-				d[3] = 255; /* opaque */
+				d[3] = 0; /* transparent */
 
 			++j;
 		}
@@ -1359,18 +1380,17 @@ apply_mask (GdkPixbuf *pixbuf,
 	return(with_alpha);
 }
 
-
 static GdkPixbuf *
 get_from_pixmap(Pixmap xpixmap, Pixmap xmask)
 {
 	unsigned int w, h;
-	int sd;
+	int sd, depth;
 	GdkPixbuf *masked, *pixmap, *mask = NULL;
 	Window win;
 	fprintf(stderr,"get_from_pixmap(%lu %lu)\n", xpixmap, xmask);
 	if (xpixmap == None) return NULL;
 	if (!XGetGeometry (dpy, xpixmap, &win, &sd, &sd, &w, &h,
-              (guint *)&sd, (guint *)&sd)) {
+			   (guint *)&sd, (guint *)&depth)) {
 		fprintf(stderr, "XGetGeometry failed for %x pixmap\n", (unsigned int)xpixmap);
 		return NULL;
 	}
@@ -1381,23 +1401,28 @@ get_from_pixmap(Pixmap xpixmap, Pixmap xmask)
 						   0, 0, 0, 0,
 						   w, h);
 	if (!pixmap) return NULL;
+	fprintf(stderr, "source pixmap depth=%d\n", depth);
+	gdk_pixbuf_save(pixmap, "/dev/shm/1pixmap.png", "png", NULL, NULL);
 	if (xmask != None && XGetGeometry(dpy, xmask, &win, &sd, &sd, &w, &h,
-					  (guint *)&sd, (guint *)&sd)) {
+					  (guint *)&sd, (guint *)&depth)) {
+
+		fprintf(stderr, "mask pixmap depth=%d\n", depth);
 		mask = gdk_pixbuf_xlib_get_from_drawable(NULL,
-							 xpixmap,
+							 xmask,
 							 xv_cmap,
 							 xv_visual,
 							 0, 0, 0, 0,
 							 w, h);
 		if (mask) {
+			gdk_pixbuf_save(mask, "/dev/shm/1mask.png", "png", NULL, NULL);
 			masked = apply_mask (pixmap, mask);
+			gdk_pixbuf_save(masked, "/dev/shm/1masked.png", "png", NULL, NULL);
 			g_object_unref (G_OBJECT (pixmap));
 			g_object_unref (G_OBJECT (mask));
 			pixmap = masked;
 		}
 	}
-
-	fprintf(stderr,"get_from_pixmap: returning %p\n", pixmap);
+	fprintf(stderr,"get_from_pixmap: returning %p\n", (void *)pixmap);
 	return pixmap;
 }
 
@@ -1445,7 +1470,7 @@ get_net_wm_icon(Window win)
 	int n;
 	GdkPixbuf *ret = NULL;
 	Atom *data = get_xaproperty(win, wmatom[WMIcon], XA_CARDINAL, &n);
-	fprintf(stderr,"get_net_wm_icon: data=%d\n", data);
+	fprintf(stderr,"get_net_wm_icon: data=%p\n", (void *) data);
 	if (!data) return NULL;
         if (n > 2*sizeof(guint32)) {
             guchar *p;
@@ -1538,7 +1563,7 @@ set_net_wm_icon(GdkPixbuf *pixbuf)
 void
 updateiconhints(int c, XWMHints *wmh)
 {
-	fprintf(stderr, "updatehints(%lu, %p)\n\n", clients[c]->win, wmh);
+	fprintf(stderr, "updatehints(%lu, %p)\n\n", clients[c]->win, (void *)wmh);
 	int alloc = 0;
 	Pixmap xpixmap = None;
 	Pixmap xmask = None;
@@ -1546,26 +1571,32 @@ updateiconhints(int c, XWMHints *wmh)
 		wmh = XGetWMHints(dpy, clients[c]->win);
 		alloc = 1;
 	}
-	if (wmh && wmh->flags & IconPixmapHint) xpixmap = wmh->icon_pixmap;
-	if (wmh && wmh->flags & IconMaskHint) xmask = wmh->icon_mask;
-	XWMHints *new = XAllocWMHints();
-	if (new) {
-		new->flags = IconPixmapHint | IconMaskHint;
-		new->icon_pixmap = xpixmap;
-		new->icon_mask = xmask;
-		fprintf(stderr, "setting hints %lu %lu\n", xpixmap, xmask);
-		XSetWMHints(dpy, win, new);
-		XFree(new);
+	if (wmh) {
+		if (wmh->flags & IconPixmapHint) xpixmap = wmh->icon_pixmap;
+		if (wmh->flags & IconMaskHint) xmask = wmh->icon_mask;
+		XWMHints *new = XAllocWMHints();
+		if (new) {
+			new->flags = IconPixmapHint | IconMaskHint;
+			new->icon_pixmap = xpixmap;
+			new->icon_mask = xmask;
+			fprintf(stderr, "setting hints %lu %lu\n", xpixmap, xmask);
+			XSetWMHints(dpy, win, new);
+			XFree(new);
+		}
+	} else {
+		set_default_icon(icon_type_pixmap);
 	}
 	if (alloc&&wmh) XFree(wmh);
+
 	GdkPixbuf *pixbuf;
 	if (((pixbuf = get_net_wm_icon(clients[c]->win)) ||
-	     (pixbuf = get_from_pixmap(xpixmap, xmask)))) {
+	     (xpixmap &&
+	      (pixbuf = get_from_pixmap(xpixmap, xmask))))) {
 		set_net_wm_icon(pixbuf);
 		fprintf(stderr, "updatehints updating\n");
 	} else {
 		fprintf(stderr, "updatehints deleting\n");
-		XDeleteProperty(dpy, win, wmatom[WMIcon]);
+		set_default_icon(icon_type_net_wm);
 	}
 
 	//XDeleteProperty(dpy, win, wmatom[WMIcon]);
@@ -1747,10 +1778,7 @@ main(int argc, char *argv[])
 	printf("0x%lx\n", win);
 	fflush(NULL);
 
-	GdkPixbuf *pixbuf = gdk_pixbuf_new_from_file ("/usr/share/pixmaps/wyeb.png", NULL);
-	set_net_wm_icon(pixbuf);
-	g_object_unref(pixbuf);
-
+	set_default_icon(icon_type_both);
 
 	if (detach) {
 		if (fork() == 0) {
@@ -1815,8 +1843,37 @@ get_xaproperty (Window win, Atom prop, Atom type, int *nitems)
 				type, &type_ret, &format_ret, &items_ret,
 				&after_ret, &prop_data) != Success)
 		return NULL;
-	fprintf(stderr, "get_xaproperty:%u %p %d\n", win, prop_data, items_ret);
+	fprintf(stderr, "get_xaproperty:%lu %p %lu\n", win, (void *) prop_data, items_ret);
 	if (nitems)
 		*nitems = items_ret;
 	return prop_data;
+}
+
+static void
+set_default_icon(icon_type which)
+{
+	static GdkPixbuf *pixbuf = NULL;
+	static XWMHints *new =  NULL;
+
+	if (!new) {
+		//pixbuf = gdk_pixbuf_new_from_file ("/usr/share/pixmaps/tabbed.png", NULL);
+		//if (!pixbuf) fprintf(stderr, "could not read tabbed.png\n");
+		new = XAllocWMHints();
+		new->flags = IconPixmapHint | IconMaskHint;
+		new->icon_pixmap = None;
+		new->icon_mask = None;
+	}
+
+	if ((which & icon_type_pixmap))
+		XSetWMHints(dpy, win, new);
+
+	if ((which & icon_type_net_wm)) {
+		if (pixbuf)
+			set_net_wm_icon(pixbuf);
+		else
+			XDeleteProperty(dpy, win, wmatom[WMIcon]);
+	}
+
+	/*g_object_unref(pixbuf);
+	  XFree(new);*/
 }
