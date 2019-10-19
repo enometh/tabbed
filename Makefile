@@ -53,6 +53,8 @@ install: all
 	@chmod 644 "${DESTDIR}${MANPREFIX}/man1/tabbed.1"
 	@sed "s/VERSION/${VERSION}/g" < xembed.1 > "${DESTDIR}${MANPREFIX}/man1/xembed.1"
 	@chmod 644 "${DESTDIR}${MANPREFIX}/man1/xembed.1"
+	@mkdir -p "${DESTDIR}/usr/share/pixmaps
+	@cp -p tabbed.png ${DESTDIR}/usr/share/pixmaps
 
 uninstall:
 	@echo removing executable files from ${DESTDIR}${PREFIX}/bin
