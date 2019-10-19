@@ -59,6 +59,8 @@ install: all
 	# installing manual pages for general commands: section 1.
 	mkdir -p "${DESTDIR}${MANPREFIX}/man1"
 	for m in ${MAN1}; do sed "s/VERSION/${VERSION}/g" < $$m > "${DESTDIR}${MANPREFIX}/man1/$$m"; done
+	mkdir -pv ${DESTDIR}/usr/share/pixmaps
+	cp -apiv tabbed.png ${DESTDIR}/usr/share/pixmaps
 
 uninstall:
 	# removing executable files.
