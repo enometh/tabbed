@@ -65,4 +65,6 @@ static const Key keys[] = {
 	{ MODKEY|ShiftMask,     XK_u,      toggle,      { .v = (void*) &urgentswitch } },
 
 	{ 0,                    XK_F11,    fullscreen,  { 0 } },
+
+//	{ MODKEY|ShiftMask,     XK_b,      togglebar,   { 0 } },
 };
