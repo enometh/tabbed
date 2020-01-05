@@ -1198,10 +1198,13 @@ spawn(const Arg *arg)
 			execvp(((char **)arg->v)[0], (char **)arg->v);
 			fprintf(stderr, "%s: execvp %s", argv0,
 			        ((char **)arg->v)[0]);
-		} else {
+		} else if (cmd && cmd[0]) {
 			cmd[cmd_append_pos] = NULL;
 			execvp(cmd[0], cmd);
 			fprintf(stderr, "%s: execvp %s", argv0, cmd[0]);
+		} else {
+			fprintf(stderr, "spawn: empty command\n");
+			exit(0);
 		}
 		perror(" failed");
 		exit(0);
