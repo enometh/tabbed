@@ -476,8 +476,10 @@ focus(int c)
 		return;
 
 	resize(c, ww, wh - bh);
+	if (autoraise) {
 	XRaiseWindow(dpy, clients[c]->win);
 	XSetInputFocus(dpy, clients[c]->win, RevertToParent, CurrentTime);
+	}
 	sendxembed(c, XEMBED_FOCUS_IN, XEMBED_FOCUS_CURRENT, 0, 0);
 	sendxembed(c, XEMBED_WINDOW_ACTIVATE, 0, 0, 0);
 	xsettitle(win, clients[c]->name);
@@ -877,6 +879,8 @@ propertynotify(const XEvent *e)
 
 		if (c == sel) updateiconhints(c, wmh);
 
+
+		if (autoraise)
 		if (wmh->flags & XUrgencyHint) {
 			XFree(wmh);
 			wmh = XGetWMHints(dpy, win);
