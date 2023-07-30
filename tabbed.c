@@ -60,7 +60,8 @@ enum { ColFG, ColBG, ColLast };       /* color */
 enum { WMProtocols, WMDelete, WMName, WMState, WMFullscreen,
        WMIcon, WMIconGeometry, WMIconName,
        XEmbed, WMSelectTab,
-       XdndAware, XdndProxy,
+       XdndAware, XdndProxy, XdndPosition, XdndStatus, XdndLeave, XdndEnter,
+       XdndDrop, XdndFinished,
        WMLast }; /* default atoms */
 
 typedef union {
@@ -266,7 +267,22 @@ clientmessage(const XEvent *e)
 			return;
 		}
 		running = False;
+		return;
 	}
+
+	if (! (sel > -1)) return;
+	Window output_window = clients[sel]->win;
+	Window target_window = e->xany.window;
+	g_message("client_message: %s: target=0x%lx, win=0x%lx output_win=0x%lx",
+		  XGetAtomName(dpy, e->xclient.message_type),
+		  target_window, win, output_window);
+
+	if (target_window == win)
+		for (int i = XdndAware; i <= XdndFinished; i++)
+			if (e->xclient.message_type == wmatom[i]) {
+				g_message("PROXYING");
+				XSendEvent(dpy, output_window, False, NoEventMask, (XEvent *)e);
+			}
 }
 
 void
@@ -500,6 +516,12 @@ focus(int c)
 	if (sel != c) {
 		lastsel = sel;
 		sel = c;
+	}
+
+	{
+	  Window w = clients[c]->win;
+	  XChangeProperty(dpy, win, wmatom[XdndProxy], XA_WINDOW, 32, PropModeReplace, (unsigned char *)&w, 1);
+	  XChangeProperty(dpy, w, wmatom[XdndProxy], XA_WINDOW, 32, PropModeReplace, (unsigned char *)&w, 1);
 	}
 
 	updateiconhints(c, NULL);
@@ -1059,6 +1081,12 @@ setup(void)
 	wmatom[XEmbed] = XInternAtom(dpy, "_XEMBED", False);
 	wmatom[XdndAware] = XInternAtom(dpy, "XdndAware", False);
 	wmatom[XdndProxy] = XInternAtom(dpy, "XdndProxy", False);
+	wmatom[XdndPosition] = XInternAtom(dpy, "XdndPosition", False);
+	wmatom[XdndStatus] = XInternAtom(dpy, "XdndStatus", False);
+	wmatom[XdndEnter] = XInternAtom(dpy, "XdndEnter", False);
+	wmatom[XdndLeave] = XInternAtom(dpy, "XdndLeave", False);
+	wmatom[XdndDrop] = XInternAtom(dpy, "XdndDrop", False);
+	wmatom[XdndFinished] = XInternAtom(dpy, "XdndFinished", False);
 
 	/* init appearance */
 	wx = 0;
@@ -1199,6 +1227,11 @@ setup(void)
 
 	snprintf(winid, sizeof(winid), "%lu", win);
 	setenv("XEMBED", winid, 1);
+
+
+	static unsigned int version = 5;
+	XChangeProperty(dpy, win, wmatom[XdndAware], XA_ATOM, 32, PropModeReplace, (unsigned char *)&version, 1);
+
 
 	nextfocus = foreground;
 	focus(-1);
