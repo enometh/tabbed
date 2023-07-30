@@ -59,7 +59,9 @@
 enum { ColFG, ColBG, ColLast };       /* color */
 enum { WMProtocols, WMDelete, WMName, WMState, WMFullscreen,
        WMIcon, WMIconGeometry, WMIconName,
-       XEmbed, WMSelectTab, WMLast }; /* default atoms */
+       XEmbed, WMSelectTab,
+       XdndAware, XdndProxy,
+       WMLast }; /* default atoms */
 
 typedef union {
 	int i;
@@ -1055,6 +1057,8 @@ setup(void)
 	wmatom[WMIconGeometry] = XInternAtom(dpy, "_NET_WM_ICON_GEOMETRY", False);
 	wmatom[WMIconName] = XInternAtom(dpy, "_NET_WM_ICON_NAME", False);
 	wmatom[XEmbed] = XInternAtom(dpy, "_XEMBED", False);
+	wmatom[XdndAware] = XInternAtom(dpy, "XdndAware", False);
+	wmatom[XdndProxy] = XInternAtom(dpy, "XdndProxy", False);
 
 	/* init appearance */
 	wx = 0;
