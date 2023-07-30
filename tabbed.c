@@ -60,7 +60,9 @@ enum { ColFG, ColBG, ColLast };       /* color */
 enum { WMProtocols, WMDelete, WMName, WMState, WMFullscreen,
        WMIcon, WMIconGeometry, WMIconName,
        XEmbed, WMSelectTab,
-       XdndAware, XdndProxy,
+       XEmbedInfo,
+       XdndAware, XdndProxy, XdndPosition, XdndStatus, XdndLeave, XdndEnter,
+       XdndDrop, XdndFinished,
        WMLast }; /* default atoms */
 
 typedef union {
@@ -1090,8 +1092,15 @@ setup(void)
 	wmatom[WMIconGeometry] = XInternAtom(dpy, "_NET_WM_ICON_GEOMETRY", False);
 	wmatom[WMIconName] = XInternAtom(dpy, "_NET_WM_ICON_NAME", False);
 	wmatom[XEmbed] = XInternAtom(dpy, "_XEMBED", False);
+	wmatom[XEmbedInfo] = XInternAtom(dpy, "_XEMBED_INFO", False);
 	wmatom[XdndAware] = XInternAtom(dpy, "XdndAware", False);
 	wmatom[XdndProxy] = XInternAtom(dpy, "XdndProxy", False);
+	wmatom[XdndPosition] = XInternAtom(dpy, "XdndPosition", False);
+	wmatom[XdndStatus] = XInternAtom(dpy, "XdndStatus", False);
+	wmatom[XdndEnter] = XInternAtom(dpy, "XdndEnter", False);
+	wmatom[XdndLeave] = XInternAtom(dpy, "XdndLeave", False);
+	wmatom[XdndDrop] = XInternAtom(dpy, "XdndDrop", False);
+	wmatom[XdndFinished] = XInternAtom(dpy, "XdndFinished", False);
 
 	/* init appearance */
 	wx = 0;
