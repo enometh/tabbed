@@ -66,5 +66,5 @@ static const Key keys[] = {
 
 	{ 0,                    XK_F11,    fullscreen,  { 0 } },
 
-	{ MODKEY|ShiftMask,     XK_b,      togglebar,   { 0 } },
+//	{ MODKEY|ShiftMask,     XK_b,      togglebar,   { 0 } },
 };
