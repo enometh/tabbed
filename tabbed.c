@@ -59,7 +59,9 @@
 enum { ColFG, ColBG, ColLast };       /* color */
 enum { WMProtocols, WMDelete, WMName, WMState, WMFullscreen,
        WMIcon, WMIconGeometry, WMIconName,
-       XEmbed, WMSelectTab, WMLast }; /* default atoms */
+       XEmbed, WMSelectTab,
+       XdndAware, XdndProxy,
+       WMLast }; /* default atoms */
 
 typedef union {
 	int i;
@@ -264,7 +266,16 @@ clientmessage(const XEvent *e)
 			return;
 		}
 		running = False;
+		return;
 	}
+
+	if (! (sel > -1)) return;
+	Window output_window = clients[sel]->win;
+	Window target_window = e->xany.window;
+	g_message("client_message: %s: target=0x%lx, win=0x%lx, output_win=0x%lx, src=0x%lx",
+		  XGetAtomName(dpy, e->xclient.message_type),
+		  target_window, win, output_window,
+		  e->xclient.data.l[0]);
 }
 
 void
@@ -499,6 +510,12 @@ focus(int c)
 	if (sel != c) {
 		lastsel = sel;
 		sel = c;
+	}
+
+	{
+	  Window w = clients[sel]->win;
+	  XChangeProperty(dpy, win, wmatom[XdndProxy], XA_WINDOW, 32, PropModeReplace, (unsigned char *)&w, 1);
+	  XChangeProperty(dpy, w, wmatom[XdndProxy], XA_WINDOW, 32, PropModeReplace, (unsigned char *)&w, 1);
 	}
 
 	updateiconhints(c, NULL);
@@ -1067,6 +1084,8 @@ setup(void)
 	wmatom[WMIconGeometry] = XInternAtom(dpy, "_NET_WM_ICON_GEOMETRY", False);
 	wmatom[WMIconName] = XInternAtom(dpy, "_NET_WM_ICON_NAME", False);
 	wmatom[XEmbed] = XInternAtom(dpy, "_XEMBED", False);
+	wmatom[XdndAware] = XInternAtom(dpy, "XdndAware", False);
+	wmatom[XdndProxy] = XInternAtom(dpy, "XdndProxy", False);
 
 	/* init appearance */
 	wx = 0;
@@ -1207,6 +1226,11 @@ setup(void)
 
 	snprintf(winid, sizeof(winid), "%lu", win);
 	setenv("XEMBED", winid, 1);
+
+
+	static unsigned int version = 5;
+	XChangeProperty(dpy, win, wmatom[XdndAware], XA_ATOM, 32, PropModeReplace, (unsigned char *)&version, 1);
+
 
 	nextfocus = foreground;
 	focus(-1);
