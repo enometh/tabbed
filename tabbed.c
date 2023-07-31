@@ -1181,6 +1181,7 @@ setup(void)
 	} else {
 		XSetWindowAttributes swa;
 		swa.background_pixel = dc.norm[ColBG].pixel;
+		swa.background_pixmap = None;
 		swa.border_pixel = dc.norm[ColFG].pixel;
 		swa.colormap = xv_cmap;
 		swa.event_mask = SubstructureNotifyMask | FocusChangeMask |
@@ -1189,6 +1190,7 @@ setup(void)
 			SubstructureRedirectMask;
 		win = XCreateWindow(dpy, root, wx, wy, ww, wh, 0,
 				    xv_depth, InputOutput, xv_visual,
+				    CWBackPixmap |
 				    CWBorderPixel | CWColormap | CWEventMask |
 				    CWBackPixel, &swa);
 	}
@@ -1198,6 +1200,8 @@ setup(void)
 	XMapRaised(dpy, win);
 	XSelectInput(dpy, win, SubstructureNotifyMask | FocusChangeMask |
 	             ButtonPressMask | ExposureMask | KeyPressMask |
+		     ButtonMotionMask | ButtonReleaseMask |
+		     VisibilityChangeMask |
 	             PropertyChangeMask | StructureNotifyMask |
 	             SubstructureRedirectMask);
 
