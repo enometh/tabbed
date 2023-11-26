@@ -492,11 +492,14 @@ focus(int c)
 		xsettitle(win, buf);
 		//XRaiseWindow(dpy, win);
 
+		set_default_icon(icon_type_both);
 		return;
 	}
 
-	if (c < 0 || c >= nclients)
+	if (c < 0 || c >= nclients) {
+		set_default_icon(icon_type_both);
 		return;
+	}
 
 	resize(c, ww, wh - bh);
 	if (autoraise) {
@@ -950,6 +953,9 @@ propertynotify(const XEvent *e)
 	} else if (ev->state != PropertyDelete && ev->atom == XA_WM_NAME &&
 	           (c = getclient(ev->window)) > -1) {
 		updatetitle(c);
+	} else if (ev->atom == wmatom[WMIcon] && (c = getclient(ev->window)) > -1 && c == sel) {
+		fprintf(stderr, "updateiconhints: unseen branch\n");
+		updateiconhints(c, NULL);
 	}
 }
 
@@ -1300,11 +1306,14 @@ unmanage(int c)
 	if (c < 0 || c >= nclients) {
 		drawbar();
 		XSync(dpy, False);
+		set_default_icon(icon_type_both);
 		return;
 	}
 
-	if (!nclients)
+	if (!nclients) {
+		set_default_icon(icon_type_both);
 		return;
+	}
 
 	if (c == 0) {
 		/* First client. */
@@ -1330,8 +1339,8 @@ unmanage(int c)
 		if (closelastclient)
 			running = False;
 		else if (fillagain && running) {
-			spawn(NULL);
 			set_default_icon(icon_type_both);
+			spawn(NULL);
 		}
 	} else {
 		if (lastsel >= nclients)
@@ -1621,7 +1630,7 @@ updateiconhints(int c, XWMHints *wmh)
 		wmh = XGetWMHints(dpy, clients[c]->win);
 		alloc = 1;
 	}
-	if (wmh) {
+	if (wmh  && (wmh->flags & IconPixmapHint || wmh->flags & IconMaskHint)) {
 		if (wmh->flags & IconPixmapHint) xpixmap = wmh->icon_pixmap;
 		if (wmh->flags & IconMaskHint) xmask = wmh->icon_mask;
 		XWMHints *new = XAllocWMHints();
@@ -1899,29 +1908,67 @@ get_xaproperty (Window win, Atom prop, Atom type, int *nitems)
 	return prop_data;
 }
 
+
+/*
+magick tabbed.png tabbed.pbm
+pbmmask tabbed.pbm > tabbed_mask.pbm
+convert tabbed.pbm -resize 64x64 tabbed.xbm
+convert tabbed_mask.pbm -resize 64x64 tabbed_mask.xbm
+*/
+
+#include "tabbed.xbm"
+#include "tabbed_mask.xbm"
+
 static void
 set_default_icon(icon_type which)
 {
 	static GdkPixbuf *pixbuf = NULL;
 	static XWMHints *new =  NULL;
 
+	// net_wm_icon is not set if `pixbuf' ends up null in the
+	// following block.  though tabbed.png was checked into the
+	// repo it was never used as the two lines that set the pixbuf
+	// were always commented out in the published code.
+
+	// this patch adds a default bitmap icon and its mask
+	// (displayed when the window doesn't have an icon) (created
+	// from tabbed.png) and enables those through wmhints.
+
+	// this means that if a focused window doesn't have any icons
+	// the default wmhints icons get used.
+
+	// with fvwm3 the sidebar won't show the icon because it uses
+	// net_wm_icon, but setting net_wm_icon means the the wmhints
+	// pixmaps dont get used.  also with fvwm3, the sidebar icon
+	// stays stale when focus shifts to a tabbed window which does
+	// not have any icons.
+
+
+
 	if (!new) {
 		//pixbuf = gdk_pixbuf_new_from_file ("/usr/share/pixmaps/tabbed.png", NULL);
 		//if (!pixbuf) fprintf(stderr, "could not read tabbed.png\n");
 		new = XAllocWMHints();
 		new->flags = IconPixmapHint | IconMaskHint;
-		new->icon_pixmap = None;
-		new->icon_mask = None;
+		Pixmap tmp_pixmap = XCreateBitmapFromData(dpy, win, tabbed_bits, tabbed_width, tabbed_height);
+		Pixmap tmp_pixmap_mask = XCreateBitmapFromData(dpy, win, tabbed_mask_bits, tabbed_mask_width, tabbed_mask_height);
+		new->icon_pixmap = tmp_pixmap_mask;
+		new->icon_mask = tmp_pixmap;
 	}
 
-	if ((which & icon_type_pixmap))
+	if ((which & icon_type_pixmap)) {
+		fprintf(stderr, "icon_default: setwmhints\n");
 		XSetWMHints(dpy, win, new);
+	}
 
 	if ((which & icon_type_net_wm)) {
-		if (pixbuf)
+		if (pixbuf) {
+			fprintf(stderr, "icon_default: set_wm_icon\n");
 			set_net_wm_icon(pixbuf);
-		else
+		} else {
+			fprintf(stderr, "icon_default: deletewmatom\n");
 			XDeleteProperty(dpy, win, wmatom[WMIcon]);
+		}
 	}
 
 	/*g_object_unref(pixbuf);
