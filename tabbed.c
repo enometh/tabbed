@@ -273,16 +273,18 @@ clientmessage(const XEvent *e)
 	if (! (sel > -1)) return;
 	Window output_window = clients[sel]->win;
 	Window target_window = e->xany.window;
-	g_message("client_message: %s: target=0x%lx, win=0x%lx output_win=0x%lx",
+	g_message("client_message: %s: target=0x%lx, win=0x%lx, output_win=0x%lx, src=0x%lx",
 		  XGetAtomName(dpy, e->xclient.message_type),
-		  target_window, win, output_window);
-
+		  target_window, win, output_window,
+		  e->xclient.data.l[0]);
+	/*
 	if (target_window == win)
 		for (int i = XdndAware; i <= XdndFinished; i++)
 			if (e->xclient.message_type == wmatom[i]) {
 				g_message("PROXYING");
 				XSendEvent(dpy, output_window, False, NoEventMask, (XEvent *)e);
 			}
+	*/
 }
 
 void
@@ -522,7 +524,7 @@ focus(int c)
 	}
 
 	{
-	  Window w = clients[c]->win;
+	  Window w = clients[sel]->win;
 	  XChangeProperty(dpy, win, wmatom[XdndProxy], XA_WINDOW, 32, PropModeReplace, (unsigned char *)&w, 1);
 	  XChangeProperty(dpy, w, wmatom[XdndProxy], XA_WINDOW, 32, PropModeReplace, (unsigned char *)&w, 1);
 	}
