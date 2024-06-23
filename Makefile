@@ -8,7 +8,7 @@ PREFIX = /usr/local
 MANPREFIX = ${PREFIX}/share/man
 DOCPREFIX = ${PREFIX}/share/doc/${NAME}
 
-CFLAGS += -g3 -O0
+CFLAGS += -g3 -O0 -Wno-overflow
 
 # use system flags.
 TABBED_CFLAGS = -I/usr/X11R6/include -I/usr/include/freetype2 ${CFLAGS}
