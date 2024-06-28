@@ -191,6 +191,8 @@ static char *wmname = "tabbed";
 static const char *geometry;
 static Bool barvisibility = True;
 
+static Bool support_xdnd = True;
+
 char *argv0;
 
 int _32bpp = 0;
@@ -477,6 +479,8 @@ expose(const XEvent *e)
 		drawbar();
 }
 
+static int hasCorrectXdndAwareProperty(Display *disp, Window wind);
+
 void
 focus(int c)
 {
@@ -517,6 +521,7 @@ focus(int c)
 		sel = c;
 	}
 
+	if (support_xdnd && hasCorrectXdndAwareProperty(dpy, clients[sel]->win))
 	{
 	  Window w = clients[sel]->win;
 	  XChangeProperty(dpy, win, wmatom[XdndProxy], XA_WINDOW, 32, PropModeReplace, (unsigned char *)&w, 1);
@@ -1247,9 +1252,10 @@ setup(void)
 	setenv("XEMBED", winid, 1);
 
 
+	if (support_xdnd) {
 	static unsigned int version = 5;
 	XChangeProperty(dpy, win, wmatom[XdndAware], XA_ATOM, 32, PropModeReplace, (unsigned char *)&version, 1);
-
+	}
 
 	nextfocus = foreground;
 	focus(-1);
@@ -1764,6 +1770,9 @@ main(int argc, char *argv[])
 	char *pstr;
 
 	ARGBEGIN {
+	case 'x':
+		support_xdnd = False;
+		break;
 	case 'c':
 		closelastclient = True;
 		fillagain = False;
@@ -1982,4 +1991,31 @@ set_default_icon(icon_type which)
 
 	/*g_object_unref(pixbuf);
 	  XFree(new);*/
+}
+
+// This checks if the supplied window has the XdndAware property
+static int hasCorrectXdndAwareProperty(Display *disp, Window wind) {
+	// Try to get property
+	int retVal = 0;
+	Atom actualType = None;
+	int actualFormat;
+	unsigned long numOfItems, bytesAfterReturn;
+	unsigned char *data = NULL;
+
+	const int XDND_PROTOCOL_VERSION = 5;
+
+	if (XGetWindowProperty(disp, wind, XdndAware, 0, 1024, False, AnyPropertyType,
+		&actualType, &actualFormat, &numOfItems, &bytesAfterReturn, &data) == Success) {
+		if (actualType != None) {
+			// Assume architecture is little endian and just read first byte for
+			// XDND protocol version
+			if (data[0] <= XDND_PROTOCOL_VERSION) {
+				retVal = data[0];
+			}
+
+			XFree(data);
+		}
+	}
+
+	return retVal;
 }
