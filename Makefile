@@ -10,6 +10,11 @@ DOCPREFIX = ${PREFIX}/share/doc/${NAME}
 
 CFLAGS += -g3 -O0 -Wno-overflow
 
+HAVE_USE_SIGACTION_SIGCHLD ?= 1
+ifneq ($(HAVE_USE_SIGACTION_SIGCHLD),0)
+CFLAGS += -DHAVE_USE_SIGACTION_SIGCHLD
+endif
+
 # use system flags.
 TABBED_CFLAGS = -I/usr/X11R6/include -I/usr/include/freetype2 ${CFLAGS}
 TABBED_LDFLAGS = -L/usr/X11R6/lib -lX11 -lfontconfig -lXft -lXrender ${LDFLAGS}

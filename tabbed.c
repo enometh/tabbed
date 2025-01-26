@@ -140,6 +140,9 @@ static void run(void);
 static void sendxembed(int c, long msg, long detail, long d1, long d2);
 static void setcmd(int argc, char *argv[], int);
 static void setup(void);
+#ifndef HAVE_USE_SIGACTION_SIGCHLD
+static void sigchld(int unused);
+#endif
 static void spawn(const Arg *arg);
 static int textnw(const char *text, unsigned int len);
 static void toggle(const Arg *arg);
@@ -1068,6 +1071,7 @@ setup(void)
 	XWMHints *wmh;
 	XClassHint class_hint;
 	XSizeHints *size_hint;
+#ifdef HAVE_USE_SIGACTION_SIGCHLD
 	struct sigaction sa;
 
 	/* do not transform children into zombies when they terminate */
@@ -1078,6 +1082,10 @@ setup(void)
 
 	/* clean up any zombies that might have been inherited */
 	while (waitpid(-1, NULL, WNOHANG) > 0);
+#else
+	/* clean up any zombies immediately */
+	sigchld(0);
+#endif
 
 	/* init screen */
 	screen = DefaultScreen(dpy);
@@ -1268,22 +1276,36 @@ togglebar(const Arg *arg)
 	drawbar();
 }
 
+
+#ifndef HAVE_USE_SIGACTION_SIGCHLD
+void
+sigchld(int unused)
+{
+	if (signal(SIGCHLD, sigchld) == SIG_ERR)
+		die("%s: cannot install SIGCHLD handler", argv0);
+
+	while (0 < waitpid(-1, NULL, WNOHANG));
+}
+#endif
+
 void
 spawn(const Arg *arg)
 {
+#ifdef HAVE_USE_SIGACTION_SIGCHLD
 	struct sigaction sa;
-
+#endif
 	if (fork() == 0) {
 		if(dpy)
 			close(ConnectionNumber(dpy));
 
 		setsid();
 
+#ifdef HAVE_USE_SIGACTION_SIGCHLD
 		sigemptyset(&sa.sa_mask);
 		sa.sa_flags = 0;
 		sa.sa_handler = SIG_DFL;
 		sigaction(SIGCHLD, &sa, NULL);
-
+#endif
 		if (arg && arg->v) {
 			execvp(((char **)arg->v)[0], (char **)arg->v);
 			fprintf(stderr, "%s: execvp %s", argv0,
